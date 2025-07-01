@@ -1,10 +1,10 @@
 
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{ current_lang }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Результат конвертации - MIDI to BEEP</title>
+    <title>{{ get_text('conversion_complete') }} - {{ get_text('title') }}</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -19,10 +19,39 @@
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
         h1 {
             color: #28a745;
             text-align: center;
-            margin-bottom: 30px;
+            margin: 0;
+        }
+        .language-switcher {
+            display: flex;
+            gap: 10px;
+        }
+        .lang-btn {
+            padding: 8px 15px;
+            border: 2px solid #007bff;
+            background: white;
+            color: #007bff;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .lang-btn:hover {
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+        }
+        .lang-btn.active {
+            background: #007bff;
+            color: white;
         }
         .success {
             background-color: #d4edda;
@@ -99,39 +128,47 @@
 </head>
 <body>
     <div class="container">
-        <h1>✅ Конвертация завершена!</h1>
+        <div class="header">
+            <h1>✅ {{ get_text('conversion_complete') }}</h1>
+            <div class="language-switcher">
+                <a href="{{ url_for('set_language', language='en') }}" 
+                   class="lang-btn {% if current_lang == 'en' %}active{% endif %}">EN</a>
+                <a href="{{ url_for('set_language', language='ru') }}" 
+                   class="lang-btn {% if current_lang == 'ru' %}active{% endif %}">RU</a>
+            </div>
+        </div>
         
         <div class="success">
-            <strong>Успешно!</strong> MIDI файл был конвертирован в BEEP команды.
+            <strong>{{ get_text('success') }}</strong> {{ get_text('success_msg') }}
         </div>
 
         <div class="stats">
             <div class="stat-item">
                 <div class="stat-number">{{ commands|length }}</div>
-                <div>BEEP команд</div>
+                <div>{{ get_text('commands') }}</div>
             </div>
             <div class="stat-item">
                 <div class="stat-number">{{ filename }}</div>
-                <div>Выходной файл</div>
+                <div>{{ get_text('output_file') }}</div>
             </div>
         </div>
 
-        <h3>Предварительный просмотр команд:</h3>
+        <h3>{{ get_text('preview') }}</h3>
         <div class="commands-preview">
             {% for command in commands[:20] %}
                 {{ command }}<br>
             {% endfor %}
             {% if commands|length > 20 %}
-                <em>... и еще {{ commands|length - 20 }} команд</em>
+                <em>... {{ get_text('and') }} {{ commands|length - 20 }} {{ get_text('more_commands') }}</em>
             {% endif %}
         </div>
 
         <div style="text-align: center; margin-top: 30px;">
             <a href="{{ url_for('download', filename=download_link) }}" class="download-btn">
-                📥 Скачать файл
+                📥 {{ get_text('download') }}
             </a>
             <a href="{{ url_for('index') }}" class="back-btn">
-                🔙 Конвертировать еще один файл
+                🔙 {{ get_text('convert_another') }}
             </a>
         </div>
     </div>

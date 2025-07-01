@@ -3,7 +3,7 @@ import mido
 from mido import MidiFile
 import math
 import datetime
-from flask import Flask, render_template, request, send_file, redirect, url_for, flash
+from flask import Flask, render_template, request, send_file, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -53,6 +53,59 @@ def process_midi_tracks(midi_file):
                     })
     return notes, tempo, ticks_per_beat
 
+# Language translations
+translations = {
+    'en': {
+        'title': 'MIDI to BEEP Converter',
+        'description': 'Upload a MIDI file (.mid or .midi) to convert it to BEEP commands.',
+        'select_file': 'Select MIDI file',
+        'convert': 'Convert',
+        'no_file': 'No file selected!',
+        'invalid_file': 'Only MIDI files (.mid, .midi) are allowed!',
+        'success': 'Success!',
+        'success_msg': 'MIDI file has been converted to BEEP commands.',
+        'commands': 'BEEP commands',
+        'output_file': 'Output file',
+        'preview': 'Commands preview:',
+        'download': 'Download file',
+        'convert_another': 'Convert another file',
+        'conversion_complete': 'Conversion complete!',
+        'error': 'Error',
+        'file_not_found': 'File not found!'
+    },
+    'ru': {
+        'title': 'MIDI в BEEP Конвертер',
+        'description': 'Загрузите MIDI файл (.mid или .midi) для конвертации в BEEP команды.',
+        'select_file': 'Выберите MIDI файл',
+        'convert': 'Конвертировать',
+        'no_file': 'Файл не выбран!',
+        'invalid_file': 'Разрешены только MIDI файлы (.mid, .midi)!',
+        'success': 'Успешно!',
+        'success_msg': 'MIDI файл был конвертирован в BEEP команды.',
+        'commands': 'BEEP команд',
+        'output_file': 'Выходной файл',
+        'preview': 'Предварительный просмотр команд:',
+        'download': 'Скачать файл',
+        'convert_another': 'Конвертировать еще один файл',
+        'conversion_complete': 'Конвертация завершена!',
+        'error': 'Ошибка',
+        'file_not_found': 'Файл не найден!'
+    }
+}
+
+def get_lang():
+    return session.get('language', 'en')
+
+def get_text(key):
+    lang = get_lang()
+    return translations[lang].get(key, translations['en'][key])
+
+@app.route('/set_language/<language>')
+def set_language(language):
+    if language in ['en', 'ru']:
+        session['language'] = language
+    return redirect(request.referrer or url_for('index'))
+
 def generate_beep_commands(notes, tempo, ticks_per_beat):
     events = []
     for note in notes:
@@ -88,16 +141,16 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
 def index():
     if request.method == 'POST':
         if 'file' not in request.files:
-            flash('No file selected!', 'error')
+            flash(get_text('no_file'), 'error')
             return redirect(request.url)
 
         file = request.files['file']
         if file.filename == '':
-            flash('No file selected!', 'error')
+            flash(get_text('no_file'), 'error')
             return redirect(request.url)
 
         if not allowed_file(file.filename):
-            flash('Only MIDI files (.mid, .midi) are allowed!', 'error')
+            flash(get_text('invalid_file'), 'error')
             return redirect(request.url)
 
         filename = secure_filename(file.filename)
@@ -118,20 +171,22 @@ def index():
             return render_template('result.html',
                                 filename=output_filename,
                                 commands=commands,
-                                download_link=output_filename)
+                                download_link=output_filename,
+                                get_text=get_text,
+                                current_lang=get_lang())
         except Exception as e:
-            flash(f'Error: {str(e)}', 'error')
+            flash(f'{get_text("error")}: {str(e)}', 'error')
             if os.path.exists(input_path):
                 os.remove(input_path)
             return redirect(request.url)
 
-    return render_template('index.html')
+    return render_template('index.html', get_text=get_text, current_lang=get_lang())
 
 @app.route('/download/<filename>')
 def download(filename):
     path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if not os.path.exists(path):
-        flash('File not found!', 'error')
+        flash(get_text('file_not_found'), 'error')
         return redirect(url_for('index'))
     return send_file(path, as_attachment=True)
 
