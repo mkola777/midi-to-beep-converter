@@ -5,16 +5,17 @@ import math
 import datetime
 from flask import Flask, render_template, request, send_file, redirect, url_for, flash
 from werkzeug.utils import secure_filename
-import PySimpleGUI as sg  
-
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'
-app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['ALLOWED_EXTENSIONS'] = {'mid', 'midi'}
 
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def note_to_freq(note):
     return int(440 * math.pow(2, (note - 69) / 12))
@@ -24,8 +25,8 @@ def ticks_to_ms(ticks, tempo, ticks_per_beat):
 
 def process_midi_tracks(midi_file):
     ticks_per_beat = midi_file.ticks_per_beat
-    tempo = 500000  
-python main.py --webpython main.py
+    tempo = 500000
+
     for track in midi_file.tracks:
         for msg in track:
             if msg.type == 'set_tempo':
@@ -39,10 +40,8 @@ python main.py --webpython main.py
 
         for msg in track:
             current_time += msg.time
-
             if msg.type == 'note_on' and msg.velocity > 0:
                 active_notes[msg.note] = current_time
-
             elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)):
                 if msg.note in active_notes:
                     start_time = active_notes.pop(msg.note)
@@ -52,7 +51,6 @@ python main.py --webpython main.py
                         'end': current_time,
                         'freq': note_to_freq(msg.note)
                     })
-
     return notes, tempo, ticks_per_beat
 
 def generate_beep_commands(notes, tempo, ticks_per_beat):
@@ -71,7 +69,6 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
     for event in events:
         time_ms = int(ticks_to_ms(event[1], tempo, ticks_per_beat))
         note = event[2]
-
         if time_ms > last_time:
             duration = time_ms - last_time
             if duration > 0 and current_freq > 0:
@@ -85,24 +82,10 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
             if note in active_notes:
                 active_notes.remove(note)
                 current_freq = max(n['freq'] for n in active_notes) if active_notes else 0
-
     return commands
 
-def convert_midi(input_path, output_path):
-    try:
-        mid = MidiFile(input_path)
-        notes, tempo, ticks_per_beat = process_midi_tracks(mid)
-        commands = generate_beep_commands(notes, tempo, ticks_per_beat)
-
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write("\n".join(commands))
-        return True, output_path
-
-    except Exception as e:
-        return False, f"Conversion error: {str(e)}"
-
 @app.route('/', methods=['GET', 'POST'])
-def web_interface():
+def index():
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('No file selected!', 'error')
@@ -113,7 +96,7 @@ def web_interface():
             flash('No file selected!', 'error')
             return redirect(request.url)
 
-        if not file.filename.lower().endswith(('.mid', '.midi')):
+        if not allowed_file(file.filename):
             flash('Only MIDI files (.mid, .midi) are allowed!', 'error')
             return redirect(request.url)
 
@@ -124,92 +107,33 @@ def web_interface():
         output_filename = f"beep_{os.path.splitext(filename)[0]}.txt"
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
-        success, result = convert_midi(input_path, output_path)
+        try:
+            mid = MidiFile(input_path)
+            notes, tempo, ticks_per_beat = process_midi_tracks(mid)
+            commands = generate_beep_commands(notes, tempo, ticks_per_beat)
 
-        if success:
-            return send_file(output_path, as_attachment=True)
-        else:
-            flash(result, 'error')
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write("\n".join(commands))
+
+            return render_template('result.html',
+                                filename=output_filename,
+                                commands=commands,
+                                download_link=output_filename)
+        except Exception as e:
+            flash(f'Error: {str(e)}', 'error')
+            if os.path.exists(input_path):
+                os.remove(input_path)
             return redirect(request.url)
 
-    return '''
-    <!doctype html>
-    <html>
-      <head>
-        <title>MIDI to BEEP Converter</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          h1 { color: #333; }
-          form { margin-top: 20px; }
-          .error { color: red; }
-        </style>
-      </head>
-      <body>
-        <h1>MIDI to BEEP Converter</h1>
-        {% with messages = get_flashed_messages() %}
-          {% if messages %}
-            <div class="error">{{ messages[0] }}</div>
-          {% endif %}
-        {% endwith %}
-        <form method=post enctype=multipart/form-data>
-          <input type=file name=file accept=".mid,.midi">
-          <input type=submit value=Convert>
-        </form>
-      </body>
-    </html>
-    '''
+    return render_template('index.html')
 
-def local_gui():
-    sg.theme('DarkBlue3')
-
-    layout = [
-        [sg.Text('MIDI to BEEP Converter', font=('Helvetica', 16))],
-        [sg.Text('Select MIDI file:'), sg.Input(key='-INPUT-'), 
-         sg.FileBrowse(file_types=(("MIDI Files", "*.mid"),))],
-        [sg.Text('Save as:'), sg.Input(key='-OUTPUT-'), 
-         sg.SaveAs(file_types=(("Text Files", "*.txt"),))],
-        [sg.Button('Convert'), sg.Button('Exit')],
-        [sg.Multiline(size=(60, 10), key='-LOG-', autoscroll=True)]
-    ]
-
-    window = sg.Window('MIDI to BEEP Converter', layout)
-
-    while True:
-        event, values = window.read()
-
-        if event in (sg.WIN_CLOSED, 'Exit'):
-            break
-
-        if event == 'Convert':
-            input_file = values['-INPUT-']
-            output_file = values['-OUTPUT-']
-
-            if not input_file:
-                sg.popup_error("Error", "No MIDI file selected!")
-                continue
-
-            if not output_file:
-                sg.popup_error("Error", "No output file specified!")
-                continue
-
-            success, result = convert_midi(input_file, output_file)
-
-            if success:
-                with open(result, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                window['-LOG-'].print(f"Success! File saved to:\n{result}")
-                window['-LOG-'].print("\nGenerated commands:")
-                window['-LOG-'].print(content)
-                sg.popup("Success!", f"BEEP commands saved to:\n{result}")
-            else:
-                window['-LOG-'].print(result)
-                sg.popup_error("Error", result)
-
-    window.close()
+@app.route('/download/<filename>')
+def download(filename):
+    path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.exists(path):
+        flash('File not found!', 'error')
+        return redirect(url_for('index'))
+    return send_file(path, as_attachment=True)
 
 if __name__ == '__main__':
-    import sys
-    if '--web' in sys.argv:  
-        app.run(host='0.0.0.0', port=8080)
-    else:  
-        local_gui()
+    app.run(host='0.0.0.0', port=8080)
