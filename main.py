@@ -11,32 +11,26 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key')
+app.secret_key = 'your_secret_key_here'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['ALLOWED_EXTENSIONS'] = {'mid', 'midi'}
 
-# Создание папки для загрузок
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def allowed_file(filename):
-    """Проверка разрешенных расширений файлов"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def note_to_freq(note):
-    """Конвертация MIDI ноты в частоту (Гц)"""
     return int(440 * math.pow(2, (note - 69) / 12))
 
 def ticks_to_ms(ticks, tempo, ticks_per_beat):
-    """Конвертация тиков в миллисекунды"""
     return (ticks * tempo) / (ticks_per_beat * 1000)
 
 def process_midi_tracks(midi_file):
-    """Обработка MIDI треков и извлечение нот"""
     ticks_per_beat = midi_file.ticks_per_beat
-    tempo = 500000  # Стандартный темп (120 BPM)
-    
-    # Поиск установки темпа в треках
+    tempo = 500000
+
     for track in midi_file.tracks:
         for msg in track:
             if msg.type == 'set_tempo':
@@ -47,10 +41,9 @@ def process_midi_tracks(midi_file):
     for track in midi_file.tracks:
         current_time = 0
         active_notes = {}
-        
+
         for msg in track:
             current_time += msg.time
-            
             if msg.type == 'note_on' and msg.velocity > 0:
                 active_notes[msg.note] = current_time
             elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)):
@@ -62,10 +55,9 @@ def process_midi_tracks(midi_file):
                         'end': current_time,
                         'freq': note_to_freq(msg.note)
                     })
-
     return notes, tempo, ticks_per_beat
 
-# Система перевода
+# Language translations
 translations = {
     'en': {
         'title': 'MIDI to BEEP Converter',
@@ -110,29 +102,26 @@ translations = {
 }
 
 def get_lang():
-    """Получение текущего языка из сессии"""
     return session.get('language', 'en')
 
 def get_text(key):
-    """Получение переведенного текста"""
     lang = get_lang()
     return translations[lang].get(key, translations['en'][key])
 
 @app.route('/set_language/<language>')
 def set_language(language):
-    """Установка языка интерфейса"""
-    if language in translations:
+    if language in ['en', 'ru']:
         session['language'] = language
     return redirect(request.referrer or url_for('index'))
 
 def generate_beep_commands(notes, tempo, ticks_per_beat):
-    """Генерация beep-команд с паузами"""
+    """Генерация beep-команд с паузами (beep 0)"""
     events = []
     for note in notes:
         events.append(('start', note['start'], note))
         events.append(('end', note['end'], note))
     
-    # Сортировка: сначала end-события при одинаковом времени
+    # Сортировка: end события обрабатываются первыми при одинаковом времени
     events.sort(key=lambda x: (x[1], x[0] == 'start'))
 
     active_notes = []
@@ -168,7 +157,6 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    """Главная страница с формой загрузки"""
     if request.method == 'POST':
         if 'file' not in request.files:
             flash(get_text('no_file'), 'error')
@@ -218,7 +206,6 @@ def index():
 
 @app.route('/download/<filename>')
 def download(filename):
-    """Скачивание результата"""
     path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if not os.path.exists(path):
         flash(get_text('file_not_found'), 'error')
