@@ -2,7 +2,6 @@ import os
 import mido
 from mido import MidiFile
 import math
-import datetime
 import logging
 from flask import Flask, render_template, request, send_file, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
@@ -89,20 +88,77 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
                 if current_freq > 0:
                     commands.append(f"beep {current_freq} {duration}")
                 else:
-                    commands.append(f"beep 0 {duration}") 
+                    commands.append(f"beep 0 {duration}")  # Add pause
             last_time = time_ms
 
-
+        # Update active notes
         if event[0] == 'start':
             active_notes.append(note)
         else:
             if note in active_notes:
                 active_notes.remove(note)
         
+
         current_freq = max(n['freq'] for n in active_notes) if active_notes else 0
 
     return commands
 
+
+translations = {
+    'en': {
+        'title': 'MIDI to BEEP Converter',
+        'description': 'Upload a MIDI file (.mid or .midi) to convert it to BEEP commands.',
+        'select_file': 'Select MIDI file',
+        'convert': 'Convert',
+        'no_file': 'No file selected!',
+        'invalid_file': 'Only MIDI files (.mid, .midi) are allowed!',
+        'success': 'Success!',
+        'success_msg': 'MIDI file has been converted to BEEP commands.',
+        'commands': 'BEEP commands',
+        'output_file': 'Output file',
+        'preview': 'Commands preview:',
+        'download': 'Download file',
+        'convert_another': 'Convert another file',
+        'conversion_complete': 'Conversion complete!',
+        'error': 'Error',
+        'file_not_found': 'File not found!',
+        'and': 'and',
+        'more_commands': 'more commands'
+    },
+    'ru': {
+        'title': 'MIDI в BEEP Конвертер',
+        'description': 'Загрузите MIDI файл (.mid или .midi) для конвертации в BEEP команды.',
+        'select_file': 'Выберите MIDI файл',
+        'convert': 'Конвертировать',
+        'no_file': 'Файл не выбран!',
+        'invalid_file': 'Разрешены только MIDI файлы (.mid, .midi)!',
+        'success': 'Успешно!',
+        'success_msg': 'MIDI файл был конвертирован в BEEP команды.',
+        'commands': 'BEEP команд',
+        'output_file': 'Выходной файл',
+        'preview': 'Предварительный просмотр команд:',
+        'download': 'Скачать файл',
+        'convert_another': 'Конвертировать еще один файл',
+        'conversion_complete': 'Конвертация завершена!',
+        'error': 'Ошибка',
+        'file_not_found': 'Файл не найден!',
+        'and': 'и',
+        'more_commands': 'дополнительных команд'
+    }
+}
+
+def get_lang():
+    return session.get('language', 'en')
+
+def get_text(key):
+    lang = get_lang()
+    return translations[lang].get(key, translations['en'][key])
+
+@app.route('/set_language/<language>')
+def set_language(language):
+    if language in ['en', 'ru']:
+        session['language'] = language
+    return redirect(request.referrer or url_for('index'))
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -128,10 +184,13 @@ def index():
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
         try:
+            logger.info(f"Processing MIDI file: {filename}")
             mid = MidiFile(input_path)
             notes, tempo, ticks_per_beat = process_midi_tracks(mid)
             commands = generate_beep_commands(notes, tempo, ticks_per_beat)
             
+            logger.info(f"Generated {len(commands)} BEEP commands")
+
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write("\n".join(commands))
 
@@ -150,6 +209,13 @@ def index():
 
     return render_template('index.html', get_text=get_text, current_lang=get_lang())
 
+@app.route('/download/<filename>')
+def download(filename):
+    path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.exists(path):
+        flash(get_text('file_not_found'), 'error')
+        return redirect(url_for('index'))
+    return send_file(path, as_attachment=True)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
