@@ -1,0 +1,139 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Результат конвертации - MIDI to BEEP</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #28a745;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border: 1px solid #c3e6cb;
+        }
+        .commands-preview {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            margin: 20px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .download-btn {
+            background-color: #28a745;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px 5px;
+        }
+        .download-btn:hover {
+            background-color: #218838;
+            text-decoration: none;
+            color: white;
+        }
+        .back-btn {
+            background-color: #6c757d;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px 5px;
+        }
+        .back-btn:hover {
+            background-color: #5a6268;
+            text-decoration: none;
+            color: white;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .stat-item {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            flex: 1;
+            margin: 0 10px;
+        }
+        .stat-number {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>✅ Конвертация завершена!</h1>
+        
+        <div class="success">
+            <strong>Успешно!</strong> MIDI файл был конвертирован в BEEP команды.
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-number">{{ commands|length }}</div>
+                <div>BEEP команд</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">{{ filename }}</div>
+                <div>Выходной файл</div>
+            </div>
+        </div>
+
+        <h3>Предварительный просмотр команд:</h3>
+        <div class="commands-preview">
+            {% for command in commands[:20] %}
+                {{ command }}<br>
+            {% endfor %}
+            {% if commands|length > 20 %}
+                <em>... и еще {{ commands|length - 20 }} команд</em>
+            {% endif %}
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+            <a href="{{ url_for('download', filename=download_link) }}" class="download-btn">
+                📥 Скачать файл
+            </a>
+            <a href="{{ url_for('index') }}" class="back-btn">
+                🔙 Конвертировать еще один файл
+            </a>
+        </div>
+    </div>
+</body>
+</html>
