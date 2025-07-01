@@ -6,12 +6,11 @@ import logging
 from flask import Flask, render_template, request, send_file, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
 
-
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key_here'
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key')
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['ALLOWED_EXTENSIONS'] = {'mid', 'midi'}
@@ -30,9 +29,9 @@ def ticks_to_ms(ticks, tempo, ticks_per_beat):
     return (ticks * tempo) / (ticks_per_beat * 1000)
 
 def process_midi_tracks(midi_file):
-    """Process MIDI tracks and extract notes with pauses"""
+    """Process MIDI tracks and extract notes"""
     ticks_per_beat = midi_file.ticks_per_beat
-    tempo = 500000  
+    tempo = 500000  # default tempo (120 BPM)
     
     for track in midi_file.tracks:
         for msg in track:
@@ -50,6 +49,7 @@ def process_midi_tracks(midi_file):
             
             if msg.type == 'note_on' and msg.velocity > 0:
                 active_notes[msg.note] = current_time
+                
             elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)):
                 if msg.note in active_notes:
                     start_time = active_notes.pop(msg.note)
@@ -63,14 +63,13 @@ def process_midi_tracks(midi_file):
     return notes, tempo, ticks_per_beat
 
 def generate_beep_commands(notes, tempo, ticks_per_beat):
-    """Generate beep commands with pauses (beep 0)"""
+    """Generate CMD beep commands"""
     events = []
     for note in notes:
         events.append(('start', note['start'], note))
         events.append(('end', note['end'], note))
     
-
-    events.sort(key=lambda x: (x[1], x[0] == 'start'))
+    events.sort(key=lambda x: (x[1], x[0] == 'end'))
 
     active_notes = []
     commands = []
@@ -81,83 +80,55 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
         time_ms = int(ticks_to_ms(event[1], tempo, ticks_per_beat))
         note = event[2]
         
-
         if time_ms > last_time:
             duration = time_ms - last_time
-            if duration > 0:
-                if current_freq > 0:
-                    commands.append(f"beep {current_freq} {duration}")
-                else:
-                    commands.append(f"beep 0 {duration}")  # Add pause
+            if duration > 0 and current_freq > 0:
+                commands.append(f"beep {current_freq} {duration}")
             last_time = time_ms
 
-        # Update active notes
         if event[0] == 'start':
             active_notes.append(note)
+            current_freq = max(n['freq'] for n in active_notes)
         else:
             if note in active_notes:
                 active_notes.remove(note)
-        
-
-        current_freq = max(n['freq'] for n in active_notes) if active_notes else 0
+                current_freq = max(n['freq'] for n in active_notes) if active_notes else 0
 
     return commands
-
 
 translations = {
     'en': {
         'title': 'MIDI to BEEP Converter',
-        'description': 'Upload a MIDI file (.mid or .midi) to convert it to BEEP commands.',
         'select_file': 'Select MIDI file',
         'convert': 'Convert',
         'no_file': 'No file selected!',
-        'invalid_file': 'Only MIDI files (.mid, .midi) are allowed!',
-        'success': 'Success!',
-        'success_msg': 'MIDI file has been converted to BEEP commands.',
-        'commands': 'BEEP commands',
-        'output_file': 'Output file',
-        'preview': 'Commands preview:',
-        'download': 'Download file',
-        'convert_another': 'Convert another file',
-        'conversion_complete': 'Conversion complete!',
-        'error': 'Error',
-        'file_not_found': 'File not found!',
-        'and': 'and',
-        'more_commands': 'more commands'
+        'invalid_file': 'Invalid file type!',
+        'error': 'Error'
     },
     'ru': {
-        'title': 'MIDI в BEEP Конвертер',
-        'description': 'Загрузите MIDI файл (.mid или .midi) для конвертации в BEEP команды.',
+        'title': 'Конвертер MIDI в BEEP',
         'select_file': 'Выберите MIDI файл',
         'convert': 'Конвертировать',
         'no_file': 'Файл не выбран!',
-        'invalid_file': 'Разрешены только MIDI файлы (.mid, .midi)!',
-        'success': 'Успешно!',
-        'success_msg': 'MIDI файл был конвертирован в BEEP команды.',
-        'commands': 'BEEP команд',
-        'output_file': 'Выходной файл',
-        'preview': 'Предварительный просмотр команд:',
-        'download': 'Скачать файл',
-        'convert_another': 'Конвертировать еще один файл',
-        'conversion_complete': 'Конвертация завершена!',
-        'error': 'Ошибка',
-        'file_not_found': 'Файл не найден!',
-        'and': 'и',
-        'more_commands': 'дополнительных команд'
+        'invalid_file': 'Неверный тип файла!',
+        'error': 'Ошибка'
     }
 }
 
 def get_lang():
-    return session.get('language', 'en')
+    """Get current language from session or default to English"""
+    return session.get('lang', 'en')
 
 def get_text(key):
+    """Get translated text for current language"""
     lang = get_lang()
-    return translations[lang].get(key, translations['en'][key])
+    return translations[lang].get(key, key)
 
-@app.route('/set_language/<language>')
-def set_language(language):
-    if language in ['en', 'ru']:
-        session['language'] = language
+@app.route('/set_lang/<lang>')
+def set_lang(lang):
+    """Set language preference"""
+    if lang in translations:
+        session['lang'] = lang
     return redirect(request.referrer or url_for('index'))
 
 @app.route('/', methods=['GET', 'POST'])
@@ -184,13 +155,10 @@ def index():
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
         try:
-            logger.info(f"Processing MIDI file: {filename}")
             mid = MidiFile(input_path)
             notes, tempo, ticks_per_beat = process_midi_tracks(mid)
             commands = generate_beep_commands(notes, tempo, ticks_per_beat)
             
-            logger.info(f"Generated {len(commands)} BEEP commands")
-
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write("\n".join(commands))
 
