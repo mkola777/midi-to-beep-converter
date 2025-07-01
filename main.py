@@ -23,15 +23,18 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def note_to_freq(note):
+    """Convert MIDI note to frequency (Hz)"""
     return int(440 * math.pow(2, (note - 69) / 12))
 
 def ticks_to_ms(ticks, tempo, ticks_per_beat):
+    """Convert ticks to milliseconds"""
     return (ticks * tempo) / (ticks_per_beat * 1000)
 
 def process_midi_tracks(midi_file):
+    """Process MIDI tracks and extract notes"""
     ticks_per_beat = midi_file.ticks_per_beat
-    tempo = 500000
-
+    tempo = 500000  # default tempo (120 BPM)
+    
     for track in midi_file.tracks:
         for msg in track:
             if msg.type == 'set_tempo':
@@ -42,11 +45,13 @@ def process_midi_tracks(midi_file):
     for track in midi_file.tracks:
         current_time = 0
         active_notes = {}
-
+        
         for msg in track:
             current_time += msg.time
+            
             if msg.type == 'note_on' and msg.velocity > 0:
                 active_notes[msg.note] = current_time
+                
             elif (msg.type == 'note_off' or (msg.type == 'note_on' and msg.velocity == 0)):
                 if msg.note in active_notes:
                     start_time = active_notes.pop(msg.note)
@@ -56,7 +61,42 @@ def process_midi_tracks(midi_file):
                         'end': current_time,
                         'freq': note_to_freq(msg.note)
                     })
+
     return notes, tempo, ticks_per_beat
+
+def generate_beep_commands(notes, tempo, ticks_per_beat):
+    """Generate CMD beep commands"""
+    events = []
+    for note in notes:
+        events.append(('start', note['start'], note))
+        events.append(('end', note['end'], note))
+    
+    events.sort(key=lambda x: (x[1], x[0] == 'end'))
+
+    active_notes = []
+    commands = []
+    last_time = 0
+    current_freq = 0
+
+    for event in events:
+        time_ms = int(ticks_to_ms(event[1], tempo, ticks_per_beat))
+        note = event[2]
+        
+        if time_ms > last_time:
+            duration = time_ms - last_time
+            if duration > 0 and current_freq > 0:
+                commands.append(f"beep {current_freq} {duration}")
+            last_time = time_ms
+
+        if event[0] == 'start':
+            active_notes.append(note)
+            current_freq = max(n['freq'] for n in active_notes)
+        else:
+            if note in active_notes:
+                active_notes.remove(note)
+                current_freq = max(n['freq'] for n in active_notes) if active_notes else 0
+
+    return commands
 
 # Language translations
 translations = {
@@ -114,37 +154,6 @@ def set_language(language):
     if language in ['en', 'ru']:
         session['language'] = language
     return redirect(request.referrer or url_for('index'))
-
-def generate_beep_commands(notes, tempo, ticks_per_beat):
-    events = []
-    for note in notes:
-        events.append(('start', note['start'], note))
-        events.append(('end', note['end'], note))
-
-    events.sort(key=lambda x: (x[1], x[0] == 'end'))
-
-    active_notes = []
-    commands = []
-    last_time = 0
-    current_freq = 0
-
-    for event in events:
-        time_ms = int(ticks_to_ms(event[1], tempo, ticks_per_beat))
-        note = event[2]
-        if time_ms > last_time:
-            duration = time_ms - last_time
-            if duration > 0 and current_freq > 0:
-                commands.append(f"beep {current_freq} {duration}")
-            last_time = time_ms
-
-        if event[0] == 'start':
-            active_notes.append(note)
-            current_freq = max(n['freq'] for n in active_notes)
-        else:
-            if note in active_notes:
-                active_notes.remove(note)
-                current_freq = max(n['freq'] for n in active_notes) if active_notes else 0
-    return commands
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
