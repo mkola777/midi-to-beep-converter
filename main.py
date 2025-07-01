@@ -3,8 +3,13 @@ import mido
 from mido import MidiFile
 import math
 import datetime
+import logging
 from flask import Flask, render_template, request, send_file, redirect, url_for, flash, session
 from werkzeug.utils import secure_filename
+
+# Enable logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'
@@ -71,7 +76,9 @@ translations = {
         'convert_another': 'Convert another file',
         'conversion_complete': 'Conversion complete!',
         'error': 'Error',
-        'file_not_found': 'File not found!'
+        'file_not_found': 'File not found!',
+        'and': 'and',
+        'more_commands': 'more commands'
     },
     'ru': {
         'title': 'MIDI в BEEP Конвертер',
@@ -89,7 +96,9 @@ translations = {
         'convert_another': 'Конвертировать еще один файл',
         'conversion_complete': 'Конвертация завершена!',
         'error': 'Ошибка',
-        'file_not_found': 'Файл не найден!'
+        'file_not_found': 'Файл не найден!',
+        'and': 'и',
+        'more_commands': 'дополнительных команд'
     }
 }
 
@@ -161,9 +170,12 @@ def index():
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
         try:
+            logger.info(f"Processing MIDI file: {filename}")
             mid = MidiFile(input_path)
             notes, tempo, ticks_per_beat = process_midi_tracks(mid)
             commands = generate_beep_commands(notes, tempo, ticks_per_beat)
+            
+            logger.info(f"Generated {len(commands)} BEEP commands")
 
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write("\n".join(commands))
@@ -175,6 +187,7 @@ def index():
                                 get_text=get_text,
                                 current_lang=get_lang())
         except Exception as e:
+            logger.error(f"Error processing MIDI file: {str(e)}", exc_info=True)
             flash(f'{get_text("error")}: {str(e)}', 'error')
             if os.path.exists(input_path):
                 os.remove(input_path)
