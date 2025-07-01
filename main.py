@@ -16,21 +16,27 @@ app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['ALLOWED_EXTENSIONS'] = {'mid', 'midi'}
 
+# Создание папки для загрузок
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 def allowed_file(filename):
+    """Проверка разрешенных расширений файлов"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
 
 def note_to_freq(note):
+    """Конвертация MIDI ноты в частоту (Гц)"""
     return int(440 * math.pow(2, (note - 69) / 12))
 
 def ticks_to_ms(ticks, tempo, ticks_per_beat):
+    """Конвертация тиков в миллисекунды"""
     return (ticks * tempo) / (ticks_per_beat * 1000)
 
 def process_midi_tracks(midi_file):
+    """Обработка MIDI треков и извлечение нот"""
     ticks_per_beat = midi_file.ticks_per_beat
-    tempo = 500000
+    tempo = 500000  # Стандартный темп (120 BPM)
     
+    # Поиск установки темпа в треках
     for track in midi_file.tracks:
         for msg in track:
             if msg.type == 'set_tempo':
@@ -56,49 +62,77 @@ def process_midi_tracks(midi_file):
                         'end': current_time,
                         'freq': note_to_freq(msg.note)
                     })
+
     return notes, tempo, ticks_per_beat
 
-# Language translations
+# Система перевода
 translations = {
     'en': {
         'title': 'MIDI to BEEP Converter',
+        'description': 'Upload a MIDI file (.mid or .midi) to convert it to BEEP commands.',
         'select_file': 'Select MIDI file',
         'convert': 'Convert',
         'no_file': 'No file selected!',
-        'invalid_file': 'Invalid file type!',
-        'error': 'Error'
+        'invalid_file': 'Only MIDI files (.mid, .midi) are allowed!',
+        'success': 'Success!',
+        'success_msg': 'MIDI file has been converted to BEEP commands.',
+        'commands': 'BEEP commands',
+        'output_file': 'Output file',
+        'preview': 'Commands preview:',
+        'download': 'Download file',
+        'convert_another': 'Convert another file',
+        'conversion_complete': 'Conversion complete!',
+        'error': 'Error',
+        'file_not_found': 'File not found!',
+        'and': 'and',
+        'more_commands': 'more commands'
     },
     'ru': {
-        'title': 'Конвертер MIDI в BEEP',
+        'title': 'MIDI в BEEP Конвертер',
+        'description': 'Загрузите MIDI файл (.mid или .midi) для конвертации в BEEP команды.',
         'select_file': 'Выберите MIDI файл',
         'convert': 'Конвертировать',
         'no_file': 'Файл не выбран!',
-        'invalid_file': 'Неверный тип файла!',
-        'error': 'Ошибка'
+        'invalid_file': 'Разрешены только MIDI файлы (.mid, .midi)!',
+        'success': 'Успешно!',
+        'success_msg': 'MIDI файл был конвертирован в BEEP команды.',
+        'commands': 'BEEP команд',
+        'output_file': 'Выходной файл',
+        'preview': 'Предварительный просмотр команд:',
+        'download': 'Скачать файл',
+        'convert_another': 'Конвертировать еще один файл',
+        'conversion_complete': 'Конвертация завершена!',
+        'error': 'Ошибка',
+        'file_not_found': 'Файл не найден!',
+        'and': 'и',
+        'more_commands': 'дополнительных команд'
     }
 }
 
 def get_lang():
+    """Получение текущего языка из сессии"""
     return session.get('language', 'en')
 
 def get_text(key):
+    """Получение переведенного текста"""
     lang = get_lang()
     return translations[lang].get(key, translations['en'][key])
 
 @app.route('/set_language/<language>')
 def set_language(language):
-    if language in ['en', 'ru']:
+    """Установка языка интерфейса"""
+    if language in translations:
         session['language'] = language
     return redirect(request.referrer or url_for('index'))
 
 def generate_beep_commands(notes, tempo, ticks_per_beat):
-    """Генерация beep-команд с поддержкой пауз (beep 0)"""
+    """Генерация beep-команд с паузами"""
     events = []
     for note in notes:
         events.append(('start', note['start'], note))
         events.append(('end', note['end'], note))
     
-    # Сортировка с приоритетом для end событий
+    # Сортировка: сначала end-события при одинаковом времени
     events.sort(key=lambda x: (x[1], x[0] == 'start'))
 
     active_notes = []
@@ -110,7 +144,7 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
         time_ms = int(ticks_to_ms(event[1], tempo, ticks_per_beat))
         note = event[2]
         
-        # Обработка промежутков между событиями
+        # Обработка промежутка между событиями
         if time_ms > last_time:
             duration = time_ms - last_time
             if duration > 0:
@@ -134,6 +168,7 @@ def generate_beep_commands(notes, tempo, ticks_per_beat):
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    """Главная страница с формой загрузки"""
     if request.method == 'POST':
         if 'file' not in request.files:
             flash(get_text('no_file'), 'error')
@@ -156,10 +191,13 @@ def index():
         output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
 
         try:
+            logger.info(f"Processing MIDI file: {filename}")
             mid = MidiFile(input_path)
             notes, tempo, ticks_per_beat = process_midi_tracks(mid)
             commands = generate_beep_commands(notes, tempo, ticks_per_beat)
             
+            logger.info(f"Generated {len(commands)} BEEP commands")
+
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write("\n".join(commands))
 
@@ -180,6 +218,7 @@ def index():
 
 @app.route('/download/<filename>')
 def download(filename):
+    """Скачивание результата"""
     path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if not os.path.exists(path):
         flash(get_text('file_not_found'), 'error')
