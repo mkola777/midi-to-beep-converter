@@ -25,7 +25,7 @@ def ticks_to_ms(ticks, tempo, ticks_per_beat):
 def process_midi_tracks(midi_file):
     ticks_per_beat = midi_file.ticks_per_beat
     tempo = 500000  
-
+python main.py --webpython main.py
     for track in midi_file.tracks:
         for msg in track:
             if msg.type == 'set_tempo':
